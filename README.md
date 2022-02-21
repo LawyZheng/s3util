@@ -9,25 +9,32 @@ go get github.com/lawyzheng/s3util
 ```
 
 ### Quick Start
+
+- #### Create Client
 ```go
 client := s3util.NewS3Client("my_endpoint", "my_accesskey", "my_scretekey")
+```
 
-// create bucket
+- #### Create Bucket
+```go
 err := client.CreateBucket("my-bucket")
 if err != nil {
     // handler error
     ...
 }
+```
 
-// get object download url
+- #### Get Object Download URL
+```go
 urlString, err := client.GetObjectDownloadURL("my-bucket", "my_key", time.Minute)
 if err != nil {
     // handler error
     ...
 }
+```
 
-
-// upload object from http response
+- #### Upload Object From HTTP Response
+```go
 resp, err := http.Get("my_resource_url")
 if err != nil {
     // handler error
