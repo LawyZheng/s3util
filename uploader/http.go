@@ -45,9 +45,9 @@ func NewChkFnWithEtagChk(etagchk string) CheckObjectExistFn {
 	}
 }
 
-func NewSimpleHttpUploader(uploader *s3manager.Uploader) *HttpUploader {
+func NewSimpleHttpUploader(driver *s3manager.Uploader) *HttpUploader {
 	return &HttpUploader{
-		driver: uploader,
+		driver: driver,
 	}
 }
 

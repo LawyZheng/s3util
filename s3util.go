@@ -2,7 +2,6 @@ package s3util
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -132,12 +131,12 @@ func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response
 		upload.SetTimeout(c.GetConfig().GetTimeout().GetUploadTime())
 	}
 
+	tag := resp.Header.Get("ETag")
 	head, err := c.GetHeadObject(bucket, objKey)
 	if err != nil {
-		return false, fmt.Errorf("GetHeadObjectFailed: caused by: %s", err)
+		return false, upload.UploadObject(bucket, objKey, resp.Body, tag)
 	}
 
-	tag := resp.Header.Get("ETag")
 	exist := upload.CheckObjectExist(tag, head)
 	if exist {
 		return true, nil
