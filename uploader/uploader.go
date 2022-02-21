@@ -2,6 +2,7 @@ package uploader
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -19,7 +20,8 @@ type CheckObjectExistFn func(local string, remote *s3.HeadObjectOutput) bool
 
 type Uploader interface {
 	CheckObjectExist(local string, remote *s3.HeadObjectOutput) bool
-	UploadObject(bucket, key string, source io.Reader, tag *string) error
+	UploadObject(bucket, key string, source io.Reader, tag string) error
+	UploadObjetWithMetadata(bucket, key string, source io.Reader, meta map[string]*string) error
 }
 
 func parseEtagChk(s string) string {
@@ -34,7 +36,12 @@ func NewChkFnWithEtagChk(etagchk string) CheckObjectExistFn {
 	etagchk = parseEtagChk(etagchk)
 
 	return func(local string, remote *s3.HeadObjectOutput) bool {
-		return strings.TrimSpace(local) ==
+		s := strings.TrimSpace(local)
+		if s == "" {
+			return false
+		}
+
+		return s ==
 			strings.TrimSpace(aws.StringValue(remote.Metadata[etagchk]))
 	}
 }
@@ -46,10 +53,9 @@ type HttpUploader struct {
 	EtagCheck  string
 }
 
-func NewSimpleHttpUploader(uploader *s3manager.Uploader, timeout time.Duration) *HttpUploader {
+func NewSimpleHttpUploader(uploader *s3manager.Uploader) *HttpUploader {
 	return &HttpUploader{
 		S3uploader: uploader,
-		Timeout:    timeout,
 	}
 }
 
@@ -78,14 +84,22 @@ func (h *HttpUploader) SetTimeout(t time.Duration) {
 	h.Timeout = t
 }
 
+func (h *HttpUploader) SetEtagCheck(etagchk string) {
+	s := strings.TrimSpace(etagchk)
+	if s == "" {
+		panic("etagchk can't be empty")
+	}
+	h.EtagCheck = s
+}
+
 func (h *HttpUploader) CheckObjectExist(local string, remote *s3.HeadObjectOutput) bool {
 	return h.getChkFn()(local, remote)
 }
 
-func (h *HttpUploader) UploadObject(bucket, key string, source io.Reader, tag *string) error {
+func (h *HttpUploader) UploadObject(bucket, key string, source io.Reader, tag string) error {
 	t := time.Now().Format("2006-01-02 15:04:05")
 	meta := map[string]*string{
-		h.getEtagChk(): tag,
+		h.getEtagChk(): aws.String(tag),
 		"modifiedtime": &t,
 	}
 	return h.UploadObjetWithMetadata(bucket, key, source, meta)
@@ -113,5 +127,8 @@ func (h *HttpUploader) UploadObjetWithMetadata(bucket, key string, source io.Rea
 	}
 
 	_, err := h.S3uploader.UploadWithContext(ctx, params)
-	return err
+	if err != nil {
+		return fmt.Errorf("UploadFailed: caused by: %s", err)
+	}
+	return nil
 }

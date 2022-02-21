@@ -2,7 +2,9 @@ package s3util
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,10 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/lawyzheng/s3util/uploader"
-)
-
-const (
-	etagCheck = "S3utiletagchk"
 )
 
 type S3Client struct {
@@ -80,7 +78,11 @@ func NewS3ClientWithConfig(config *S3Config) *S3Client {
 	return client
 }
 
-func (c *S3Client) getUpDriver() *s3manager.Uploader {
+func (c *S3Client) getUploadDriver() *s3manager.Uploader {
+	return c.updriver
+}
+
+func (c *S3Client) GetUploadDriver() *s3manager.Uploader {
 	return c.updriver
 }
 
@@ -88,7 +90,7 @@ func (c *S3Client) SetUploadTimeOut(t time.Duration) {
 	c.config.SetUploadTimeOut(t)
 }
 
-func (s3Client *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error) {
+func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error) {
 	if !strings.HasSuffix(prefix, "/") {
 		prefix = prefix + "/"
 	}
@@ -97,7 +99,7 @@ func (s3Client *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int,
 	defer cancel()
 
 	result := 0
-	err := s3Client.client.ListObjectsV2PagesWithContext(ctx, &s3.ListObjectsV2Input{
+	err := c.client.ListObjectsV2PagesWithContext(ctx, &s3.ListObjectsV2Input{
 		Bucket: &bucketName,
 		Prefix: &prefix,
 	}, func(p *s3.ListObjectsV2Output, last bool) (shouldContinue bool) {
@@ -111,12 +113,12 @@ func (s3Client *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int,
 	return result, err
 }
 
-func (s3Client *S3Client) GetObjectDownloadURL(bucketName string, key string, expire time.Duration) (string, error) {
+func (c *S3Client) GetObjectDownloadURL(bucketName string, key string, expire time.Duration) (string, error) {
 	params := &s3.GetObjectInput{
 		Bucket: &bucketName,
 		Key:    &key,
 	}
-	req, _ := s3Client.client.GetObjectRequest(params)
+	req, _ := c.client.GetObjectRequest(params)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	req.SetContext(ctx)
@@ -124,14 +126,57 @@ func (s3Client *S3Client) GetObjectDownloadURL(bucketName string, key string, ex
 	return url, err
 }
 
-func (s3client *S3Client) SetUploader(up uploader.Uploader) {
+func (c *S3Client) GetHeadObject(objKey, bucket string) (*s3.HeadObjectOutput, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	return c.client.HeadObjectWithContext(
+		ctx,
+		&s3.HeadObjectInput{
+			Bucket: &bucket,
+			Key:    &objKey,
+		})
+}
+
+func (c *S3Client) SetUploader(up uploader.Uploader) {
 	if up == nil {
 		panic("uploader is <nil>")
 	}
-	s3client.uploader = uploader.NewSimpleHttpUploader(s3client.updriver, 1)
+	c.uploader = up
 }
 
-func (s3client *S3Client) CheckObjectExist(objKey, bucket, srcEtag string) bool {
+func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response) (bool, error) {
+	var upload *uploader.HttpUploader
+	if c.uploader != nil {
+		if up, ok := c.uploader.(*uploader.HttpUploader); ok {
+			upload = up
+		}
+	}
+
+	if upload == nil {
+		upload = uploader.NewSimpleHttpUploader(c.getUploadDriver())
+		upload.SetTimeout(c.config.uploadTimeout)
+	}
+
+	head, err := c.GetHeadObject(objKey, bucket)
+	if err != nil {
+		return false, fmt.Errorf("GetHeadObjectFailed: caused by: %s", err)
+	}
+
+	tag := resp.Header.Get("ETag")
+	exist := upload.CheckObjectExist(tag, head)
+	if exist {
+		return true, nil
+	}
+
+	return false, upload.UploadObject(bucket, objKey, resp.Body, tag)
+}
+
+func (c *S3Client) CheckObjectExist(bucket, objKey, srcEtag string) bool {
+	if c.uploader == nil {
+		panic("uploader is <nil>")
+	}
+
 	if strings.TrimSpace(srcEtag) == "" {
 		return false
 	}
@@ -139,7 +184,7 @@ func (s3client *S3Client) CheckObjectExist(objKey, bucket, srcEtag string) bool 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	resp, err := s3client.client.HeadObjectWithContext(
+	resp, err := c.client.HeadObjectWithContext(
 		ctx,
 		&s3.HeadObjectInput{
 			Bucket: &bucket,
@@ -149,16 +194,26 @@ func (s3client *S3Client) CheckObjectExist(objKey, bucket, srcEtag string) bool 
 		return false
 	}
 
-	return s3client.uploader.CheckObjectExist(srcEtag, resp)
-	// return strings.TrimSpace(srcEtag) ==
-	// strings.TrimSpace(aws.StringValue(resp.Metadata[etagCheck]))
+	return c.uploader.CheckObjectExist(srcEtag, resp)
 }
 
-func (s3Client *S3Client) UploadObject(bucketName, key string, src io.Reader, tag *string) error {
-	return s3Client.uploader.UploadObject(bucketName, key, src, tag)
+func (c *S3Client) UploadObject(bucketName, key string, src io.Reader, tag string) error {
+	if c.uploader == nil {
+		panic("uploader is <nil>")
+	}
+
+	return c.uploader.UploadObject(bucketName, key, src, tag)
 }
 
-func (s3Client *S3Client) PutObject(bucketName, key string, src io.ReadSeeker, meta map[string]*string) error {
+func (c *S3Client) UploadObjetWithMetadata(bucketName, key string, src io.Reader, meta map[string]*string) error {
+	if c.uploader == nil {
+		panic("uploader is <nil>")
+	}
+
+	return c.uploader.UploadObjetWithMetadata(bucketName, key, src, meta)
+}
+
+func (c *S3Client) PutObjectWithMetadata(bucketName, key string, src io.ReadSeeker, meta map[string]*string) error {
 	params := &s3.PutObjectInput{
 		Bucket:   aws.String(bucketName),
 		Key:      aws.String(key),
@@ -168,22 +223,22 @@ func (s3Client *S3Client) PutObject(bucketName, key string, src io.ReadSeeker, m
 
 	var ctx context.Context
 	var cancel context.CancelFunc
-	if s3Client.config.uploadTimeout != 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), s3Client.config.uploadTimeout)
+	if c.config.uploadTimeout != 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.config.uploadTimeout)
 		defer cancel()
 	} else {
 		ctx = context.Background()
 	}
 
-	_, err := s3Client.client.PutObjectWithContext(ctx, params)
+	_, err := c.client.PutObjectWithContext(ctx, params)
 	return err
 }
 
-func (s3Client *S3Client) CreateBucket(bucketName string) error {
+func (c *S3Client) CreateBucket(bucketName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err := s3Client.client.CreateBucketWithContext(
+	_, err := c.client.CreateBucketWithContext(
 		ctx,
 		&s3.CreateBucketInput{
 			Bucket: &bucketName,
@@ -198,11 +253,11 @@ func (s3Client *S3Client) CreateBucket(bucketName string) error {
 	return err
 }
 
-func (s3Client *S3Client) BucketExist(bucketName string) (bool, error) {
+func (c *S3Client) BucketExist(bucketName string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	_, err := s3Client.client.HeadBucketWithContext(
+	_, err := c.client.HeadBucketWithContext(
 		ctx,
 		&s3.HeadBucketInput{
 			Bucket: &bucketName,
