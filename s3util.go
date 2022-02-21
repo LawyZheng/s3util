@@ -24,45 +24,21 @@ type S3Client struct {
 	uploader uploader.Uploader
 }
 
-type S3Config struct {
-	forcePath     bool
-	endpoint      string
-	accessKey     string
-	secretKey     string
-	token         string
-	region        string
-	uploadTimeout time.Duration
-}
-
-func NewDefaultConfig(endpoint, ak, sk string) *S3Config {
-	return &S3Config{
-		forcePath: true,
-		endpoint:  endpoint,
-		accessKey: ak,
-		secretKey: sk,
-		region:    "us-east-1",
-	}
-}
-
-func (c *S3Config) SetUploadTimeOut(t time.Duration) {
-	c.uploadTimeout = t
-}
-
-func (s3client *S3Client) initClient() {
+func (c *S3Client) initClient() {
 	sess := session.Must(session.NewSession())
 	cfg := aws.NewConfig()
-	cfg.WithEndpoint(s3client.config.endpoint)
-	cfg.WithRegion(s3client.config.region)
-	cfg.WithS3ForcePathStyle(s3client.config.forcePath)
+	cfg.WithEndpoint(c.config.endpoint)
+	cfg.WithRegion(c.config.region)
+	cfg.WithS3ForcePathStyle(c.config.forcePath)
 	creds := credentials.NewStaticCredentials(
-		s3client.config.accessKey,
-		s3client.config.secretKey,
-		s3client.config.token,
+		c.config.accessKey,
+		c.config.secretKey,
+		c.config.token,
 	)
 	cfg.WithCredentials(creds)
 	svc := s3.New(sess, cfg)
-	s3client.client = svc
-	s3client.updriver = s3manager.NewUploaderWithClient(svc)
+	c.client = svc
+	c.updriver = s3manager.NewUploaderWithClient(svc)
 }
 
 func NewS3Client(endpoint, ak, sk string) *S3Client {
@@ -78,16 +54,25 @@ func NewS3ClientWithConfig(config *S3Config) *S3Client {
 	return client
 }
 
-func (c *S3Client) getUploadDriver() *s3manager.Uploader {
-	return c.updriver
+func (c *S3Client) GetConfig() *S3Config {
+	return c.config
 }
 
 func (c *S3Client) GetUploadDriver() *s3manager.Uploader {
 	return c.updriver
 }
 
-func (c *S3Client) SetUploadTimeOut(t time.Duration) {
-	c.config.SetUploadTimeOut(t)
+func (c *S3Client) SetUploader(up uploader.Uploader) {
+	c.uploader = up
+}
+
+func (c *S3Client) GetUploader() uploader.Uploader {
+	return c.uploader
+}
+
+func (c *S3Client) GetHttpUploader() (*uploader.HttpUploader, bool) {
+	tmp, ok := c.uploader.(*uploader.HttpUploader)
+	return tmp, ok
 }
 
 func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error) {
@@ -95,7 +80,7 @@ func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error)
 		prefix = prefix + "/"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetCountObjTime())
 	defer cancel()
 
 	result := 0
@@ -119,15 +104,15 @@ func (c *S3Client) GetObjectDownloadURL(bucketName string, key string, expire ti
 		Key:    &key,
 	}
 	req, _ := c.client.GetObjectRequest(params)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetGetURLTime())
 	defer cancel()
 	req.SetContext(ctx)
 	url, err := req.Presign(expire)
 	return url, err
 }
 
-func (c *S3Client) GetHeadObject(objKey, bucket string) (*s3.HeadObjectOutput, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+func (c *S3Client) GetHeadObject(bucket, objKey string) (*s3.HeadObjectOutput, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetHeadObjTime())
 	defer cancel()
 
 	return c.client.HeadObjectWithContext(
@@ -138,27 +123,16 @@ func (c *S3Client) GetHeadObject(objKey, bucket string) (*s3.HeadObjectOutput, e
 		})
 }
 
-func (c *S3Client) SetUploader(up uploader.Uploader) {
-	if up == nil {
-		panic("uploader is <nil>")
-	}
-	c.uploader = up
-}
-
 func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response) (bool, error) {
 	var upload *uploader.HttpUploader
-	if c.uploader != nil {
-		if up, ok := c.uploader.(*uploader.HttpUploader); ok {
-			upload = up
-		}
+	if up, ok := c.GetHttpUploader(); ok {
+		upload = up
+	} else {
+		upload = uploader.NewSimpleHttpUploader(c.GetUploadDriver())
+		upload.SetTimeout(c.GetConfig().GetTimeout().GetUploadTime())
 	}
 
-	if upload == nil {
-		upload = uploader.NewSimpleHttpUploader(c.getUploadDriver())
-		upload.SetTimeout(c.config.uploadTimeout)
-	}
-
-	head, err := c.GetHeadObject(objKey, bucket)
+	head, err := c.GetHeadObject(bucket, objKey)
 	if err != nil {
 		return false, fmt.Errorf("GetHeadObjectFailed: caused by: %s", err)
 	}
@@ -173,7 +147,7 @@ func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response
 }
 
 func (c *S3Client) CheckObjectExist(bucket, objKey, srcEtag string) bool {
-	if c.uploader == nil {
+	if c.GetUploader() == nil {
 		panic("uploader is <nil>")
 	}
 
@@ -181,36 +155,28 @@ func (c *S3Client) CheckObjectExist(bucket, objKey, srcEtag string) bool {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-
-	resp, err := c.client.HeadObjectWithContext(
-		ctx,
-		&s3.HeadObjectInput{
-			Bucket: &bucket,
-			Key:    &objKey,
-		})
+	resp, err := c.GetHeadObject(bucket, objKey)
 	if err != nil {
 		return false
 	}
 
-	return c.uploader.CheckObjectExist(srcEtag, resp)
+	return c.GetUploader().CheckObjectExist(srcEtag, resp)
 }
 
 func (c *S3Client) UploadObject(bucketName, key string, src io.Reader, tag string) error {
-	if c.uploader == nil {
+	if c.GetUploader() == nil {
 		panic("uploader is <nil>")
 	}
 
-	return c.uploader.UploadObject(bucketName, key, src, tag)
+	return c.GetUploader().UploadObject(bucketName, key, src, tag)
 }
 
 func (c *S3Client) UploadObjetWithMetadata(bucketName, key string, src io.Reader, meta map[string]*string) error {
-	if c.uploader == nil {
+	if c.GetUploader() == nil {
 		panic("uploader is <nil>")
 	}
 
-	return c.uploader.UploadObjetWithMetadata(bucketName, key, src, meta)
+	return c.GetUploader().UploadObjetWithMetadata(bucketName, key, src, meta)
 }
 
 func (c *S3Client) PutObjectWithMetadata(bucketName, key string, src io.ReadSeeker, meta map[string]*string) error {
@@ -223,8 +189,8 @@ func (c *S3Client) PutObjectWithMetadata(bucketName, key string, src io.ReadSeek
 
 	var ctx context.Context
 	var cancel context.CancelFunc
-	if c.config.uploadTimeout != 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), c.config.uploadTimeout)
+	if c.GetConfig().GetTimeout().GetUploadTime() != 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetUploadTime())
 		defer cancel()
 	} else {
 		ctx = context.Background()
@@ -235,7 +201,7 @@ func (c *S3Client) PutObjectWithMetadata(bucketName, key string, src io.ReadSeek
 }
 
 func (c *S3Client) CreateBucket(bucketName string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetCreateBucketTime())
 	defer cancel()
 
 	_, err := c.client.CreateBucketWithContext(
@@ -254,7 +220,7 @@ func (c *S3Client) CreateBucket(bucketName string) error {
 }
 
 func (c *S3Client) BucketExist(bucketName string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetBucketExistTime())
 	defer cancel()
 
 	_, err := c.client.HeadBucketWithContext(
