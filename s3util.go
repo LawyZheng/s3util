@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/lawyzheng/s3util/uploader"
+	"github.com/lawyzheng/s3util/pkg/uploader"
 )
 
 type S3Client struct {
@@ -74,11 +74,14 @@ func (c *S3Client) GetHttpUploader() (*uploader.HttpUploader, bool) {
 	return tmp, ok
 }
 
-func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error) {
-	if !strings.HasSuffix(prefix, "/") {
-		prefix = prefix + "/"
+func (c *S3Client) CountObjectInFolder(bucket, folder string) (int, error) {
+	if !strings.HasSuffix(folder, "/") {
+		folder = folder + "/"
 	}
+	return c.CountObjectWithPrefix(bucket, folder)
+}
 
+func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetCountObjTime())
 	defer cancel()
 
