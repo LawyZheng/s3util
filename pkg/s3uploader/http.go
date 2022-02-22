@@ -117,13 +117,6 @@ func (h *HttpUploader) UploadObject(bucket, key string, source io.Reader, tag st
 }
 
 func (h *HttpUploader) UploadObjetWithMetadata(bucket, key string, source io.Reader, meta map[string]*string) error {
-	params := &s3manager.UploadInput{
-		Bucket:   aws.String(bucket),
-		Key:      aws.String(key),
-		Body:     source,
-		Metadata: meta,
-	}
-
 	var ctx context.Context
 	var cancel context.CancelFunc
 	if h.GetTimeout() != 0 {
@@ -132,7 +125,17 @@ func (h *HttpUploader) UploadObjetWithMetadata(bucket, key string, source io.Rea
 	} else {
 		ctx = context.Background()
 	}
+	err := h.UploadObjetWithContext(ctx, bucket, key, source, meta)
+	return err
+}
 
+func (h *HttpUploader) UploadObjetWithContext(ctx context.Context, bucket, key string, source io.Reader, meta map[string]*string) error {
+	params := &s3manager.UploadInput{
+		Bucket:   aws.String(bucket),
+		Key:      aws.String(key),
+		Body:     source,
+		Metadata: meta,
+	}
 	_, err := h.upload(ctx, params)
 	if err != nil {
 		return err
