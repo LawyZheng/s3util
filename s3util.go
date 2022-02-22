@@ -13,14 +13,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/lawyzheng/s3util/pkg/uploader"
+	"github.com/lawyzheng/s3util/pkg/s3uploader"
 )
 
 type S3Client struct {
 	config   *S3Config
 	client   *s3.S3
 	updriver *s3manager.Uploader
-	uploader uploader.Uploader
+	uploader s3uploader.Uploader
 }
 
 func (c *S3Client) initClient() {
@@ -61,16 +61,16 @@ func (c *S3Client) GetUploadDriver() *s3manager.Uploader {
 	return c.updriver
 }
 
-func (c *S3Client) SetUploader(up uploader.Uploader) {
+func (c *S3Client) SetUploader(up s3uploader.Uploader) {
 	c.uploader = up
 }
 
-func (c *S3Client) GetUploader() uploader.Uploader {
+func (c *S3Client) GetUploader() s3uploader.Uploader {
 	return c.uploader
 }
 
-func (c *S3Client) GetHttpUploader() (*uploader.HttpUploader, bool) {
-	tmp, ok := c.uploader.(*uploader.HttpUploader)
+func (c *S3Client) GetHttpUploader() (*s3uploader.HttpUploader, bool) {
+	tmp, ok := c.uploader.(*s3uploader.HttpUploader)
 	return tmp, ok
 }
 
@@ -126,11 +126,11 @@ func (c *S3Client) GetHeadObject(bucket, objKey string) (*s3.HeadObjectOutput, e
 }
 
 func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response) (bool, error) {
-	var upload *uploader.HttpUploader
+	var upload *s3uploader.HttpUploader
 	if up, ok := c.GetHttpUploader(); ok {
 		upload = up
 	} else {
-		upload = uploader.NewSimpleHttpUploader(c.GetUploadDriver())
+		upload = s3uploader.NewSimpleHttpUploader(c.GetUploadDriver())
 		upload.SetTimeout(c.GetConfig().GetTimeout().GetUploadTime())
 	}
 
