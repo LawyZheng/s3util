@@ -148,21 +148,9 @@ func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response
 	return false, upload.UploadObject(bucket, objKey, resp.Body, tag)
 }
 
-func (c *S3Client) CheckObjectExist(bucket, objKey, srcEtag string) bool {
-	if c.GetUploader() == nil {
-		panic("uploader is <nil>")
-	}
-
-	if strings.TrimSpace(srcEtag) == "" {
-		return false
-	}
-
-	resp, err := c.GetHeadObject(bucket, objKey)
-	if err != nil {
-		return false
-	}
-
-	return c.GetUploader().CheckObjectExist(srcEtag, resp)
+func (c *S3Client) CheckObjectExist(bucket, objKey string) (bool, error) {
+	_, err := c.GetHeadObject(bucket, objKey)
+	return err == nil, err
 }
 
 func (c *S3Client) UploadObject(bucketName, key string, src io.Reader, tag string) error {
