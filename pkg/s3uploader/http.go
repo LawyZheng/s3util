@@ -46,6 +46,10 @@ func NewChkFnWithEtagChk(etagchk string) CheckObjectExistFn {
 }
 
 func NewSimpleHttpUploader(driver *s3manager.Uploader) *HttpUploader {
+	if driver == nil {
+		panic("s3 uploader driver is <nil>")
+	}
+
 	return &HttpUploader{
 		driver: driver,
 	}
@@ -84,11 +88,11 @@ func (h *HttpUploader) GetDriver() *s3manager.Uploader {
 	return h.driver
 }
 
-func (h *HttpUploader) SetDriver(up *s3manager.Uploader) {
-	if up == nil {
+func (h *HttpUploader) SetDriver(driver *s3manager.Uploader) {
+	if driver == nil {
 		panic("s3 uploader driver is <nil>")
 	}
-	h.driver = up
+	h.driver = driver
 }
 
 func (h *HttpUploader) SetTimeout(t time.Duration) {
@@ -113,10 +117,6 @@ func (h *HttpUploader) UploadObject(bucket, key string, source io.Reader, tag st
 }
 
 func (h *HttpUploader) UploadObjetWithMetadata(bucket, key string, source io.Reader, meta map[string]*string) error {
-	if h.GetDriver() == nil {
-		panic("s3 uploader is <nil>")
-	}
-
 	params := &s3manager.UploadInput{
 		Bucket:   aws.String(bucket),
 		Key:      aws.String(key),
@@ -133,9 +133,17 @@ func (h *HttpUploader) UploadObjetWithMetadata(bucket, key string, source io.Rea
 		ctx = context.Background()
 	}
 
-	_, err := h.GetDriver().UploadWithContext(ctx, params)
+	_, err := h.upload(ctx, params)
 	if err != nil {
-		return fmt.Errorf("UploadFailed: caused by: %s", err)
+		return err
 	}
 	return nil
+}
+
+func (h *HttpUploader) upload(ctx context.Context, input *s3manager.UploadInput) (*s3manager.UploadOutput, error) {
+	output, err := h.GetDriver().UploadWithContext(ctx, input)
+	if err != nil {
+		return output, fmt.Errorf("UploadFailed: caused by: %s", err)
+	}
+	return output, nil
 }
