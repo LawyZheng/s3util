@@ -40,11 +40,12 @@ if err != nil {
     // handler error
     ...
 }
+defer resp.Body.Close()
+
 if resp.StatusCode != http.StatusOK {
     // handler status code which is not 200
     ...
 }
-defer resp.Body.Close()
 
 // skip will be true, if the object have already existed.
 skip, err := client.UploadHttpResponse("my-bucket", "my_key", resp)
