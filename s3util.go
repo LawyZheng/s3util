@@ -123,8 +123,14 @@ func (c *S3Client) GetHeadObject(bucket, objKey string) (*s3.HeadObjectOutput, e
 }
 
 func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response) (*UploadResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetUploadTime())
-	defer cancel()
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if c.GetConfig().GetTimeout().GetUploadTime() != 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetUploadTime())
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
 
 	tag := strings.TrimSpace(resp.Header.Get("ETag"))
 	t := time.Now().Format("2006-01-02 15:04:05")

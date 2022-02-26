@@ -80,5 +80,4 @@ func NewHttpChkWithEtagChk(etagchk string) *HttpChk {
 				strings.TrimSpace(aws.StringValue(remote.Metadata[etagchk]))
 		},
 	}
-
 }
