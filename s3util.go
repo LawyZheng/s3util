@@ -13,14 +13,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/lawyzheng/s3util/pkg/s3uploader"
 )
 
 type S3Client struct {
 	config   *S3Config
 	client   *s3.S3
 	updriver *s3manager.Uploader
-	uploader s3uploader.Uploader
+
+	// uploader s3uploader.Uploader
+	HttpUploadChk HttpChkInterface
 }
 
 func (c *S3Client) initClient() {
@@ -61,17 +62,11 @@ func (c *S3Client) GetUploadDriver() *s3manager.Uploader {
 	return c.updriver
 }
 
-func (c *S3Client) SetUploader(up s3uploader.Uploader) {
-	c.uploader = up
-}
-
-func (c *S3Client) GetUploader() s3uploader.Uploader {
-	return c.uploader
-}
-
-func (c *S3Client) GetHttpUploader() (*s3uploader.HttpUploader, bool) {
-	tmp, ok := c.uploader.(*s3uploader.HttpUploader)
-	return tmp, ok
+func (c *S3Client) GetHttpChk() HttpChkInterface {
+	if c.HttpUploadChk == nil {
+		return defaultHttpChk()
+	}
+	return c.HttpUploadChk
 }
 
 func (c *S3Client) CountObjectInFolder(bucket, folder string) (int, error) {
@@ -125,48 +120,34 @@ func (c *S3Client) GetHeadObject(bucket, objKey string) (*s3.HeadObjectOutput, e
 		})
 }
 
-func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response) (bool, error) {
-	var upload *s3uploader.HttpUploader
-	if up, ok := c.GetHttpUploader(); ok {
-		upload = up
-	} else {
-		upload = s3uploader.NewSimpleHttpUploader(c.GetUploadDriver())
-		upload.SetTimeout(c.GetConfig().GetTimeout().GetUploadTime())
+func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response) (*UploadResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), c.config.timeout.upload)
+	defer cancel()
+
+	tag := strings.TrimSpace(resp.Header.Get("ETag"))
+	t := time.Now().Format("2006-01-02 15:04:05")
+	meta := map[string]*string{
+		c.GetHttpChk().GetEtag(): &tag,
+		"modifiedtime":           &t,
 	}
 
-	tag := resp.Header.Get("ETag")
+	req := NewUploadRequest(resp.Body, ctx, meta)
+
 	head, err := c.GetHeadObject(bucket, objKey)
 	if err != nil {
-		return false, upload.UploadObject(bucket, objKey, resp.Body, tag)
+		return c.UploadSend(bucket, objKey, req)
 	}
 
-	exist := upload.CheckObjectExist(tag, head)
+	exist := c.GetHttpChk().GetChkFn()(resp.Header, head)
 	if exist {
-		return true, nil
+		return &UploadResponse{Output: nil, Skip: true}, nil
 	}
-
-	return false, upload.UploadObject(bucket, objKey, resp.Body, tag)
+	return c.UploadSend(bucket, objKey, req)
 }
 
 func (c *S3Client) CheckObjectExist(bucket, objKey string) (bool, error) {
 	_, err := c.GetHeadObject(bucket, objKey)
 	return err == nil, err
-}
-
-func (c *S3Client) UploadObject(bucketName, key string, src io.Reader, tag string) error {
-	if c.GetUploader() == nil {
-		panic("uploader is <nil>")
-	}
-
-	return c.GetUploader().UploadObject(bucketName, key, src, tag)
-}
-
-func (c *S3Client) UploadObjetWithMetadata(bucketName, key string, src io.Reader, meta map[string]*string) error {
-	if c.GetUploader() == nil {
-		panic("uploader is <nil>")
-	}
-
-	return c.GetUploader().UploadObjetWithMetadata(bucketName, key, src, meta)
 }
 
 func (c *S3Client) PutObjectWithMetadata(bucketName, key string, src io.ReadSeeker, meta map[string]*string) error {
@@ -229,4 +210,19 @@ func (c *S3Client) BucketExist(bucketName string) (bool, error) {
 	}
 
 	return err == nil, err
+}
+
+func (c *S3Client) UploadSend(bucket, objKey string, req *UploadRequest) (*UploadResponse, error) {
+	input := &s3manager.UploadInput{
+		Bucket:   &bucket,
+		Key:      &objKey,
+		Body:     req.src,
+		Metadata: req.meta,
+	}
+
+	out, err := upload(c.updriver, req.ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	return &UploadResponse{Output: out, Skip: false}, nil
 }
