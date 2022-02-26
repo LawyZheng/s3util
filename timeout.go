@@ -2,70 +2,55 @@ package s3util
 
 import "time"
 
+type S3TimeoutInterface interface {
+	GetUploadTime() time.Duration
+	GetHeadObjTime() time.Duration
+	GetCreateBucketTime() time.Duration
+	GetBucketExistTime() time.Duration
+	GetCountObjTime() time.Duration
+	GetGetURLTime() time.Duration
+}
+
 type S3Timeout struct {
-	upload       time.Duration
-	headObject   time.Duration
-	createBucket time.Duration
-	bucketExist  time.Duration
-	countObject  time.Duration
-	getUrl       time.Duration
+	Upload       time.Duration
+	HeadObject   time.Duration
+	CreateBucket time.Duration
+	BucketExist  time.Duration
+	CountObject  time.Duration
+	GetUrl       time.Duration
 }
 
 func NewDefaultTimeout() *S3Timeout {
 	return &S3Timeout{
-		upload:       time.Minute,
-		headObject:   3 * time.Second,
-		createBucket: 3 * time.Second,
-		bucketExist:  3 * time.Second,
-		countObject:  10 * time.Second,
-		getUrl:       time.Second,
+		Upload:       time.Minute,
+		HeadObject:   3 * time.Second,
+		CreateBucket: 3 * time.Second,
+		BucketExist:  3 * time.Second,
+		CountObject:  10 * time.Second,
+		GetUrl:       time.Second,
 	}
 }
 
 func (t *S3Timeout) GetUploadTime() time.Duration {
-	return t.upload
-}
-
-func (t *S3Timeout) SetUploadTime(timeout time.Duration) {
-	t.upload = timeout
+	return t.Upload
 }
 
 func (t *S3Timeout) GetHeadObjTime() time.Duration {
-	return t.headObject
-}
-
-func (t *S3Timeout) SetHeadObjTime(timeout time.Duration) {
-	t.headObject = timeout
+	return t.HeadObject
 }
 
 func (t *S3Timeout) GetCreateBucketTime() time.Duration {
-	return t.createBucket
-}
-
-func (t *S3Timeout) SetCreateBucketTime(timeout time.Duration) {
-	t.createBucket = timeout
+	return t.CreateBucket
 }
 
 func (t *S3Timeout) GetBucketExistTime() time.Duration {
-	return t.bucketExist
-}
-
-func (t *S3Timeout) SetBucketExistTime(timeout time.Duration) {
-	t.bucketExist = timeout
+	return t.BucketExist
 }
 
 func (t *S3Timeout) GetCountObjTime() time.Duration {
-	return t.countObject
-}
-
-func (t *S3Timeout) SetCountObjTime(timeout time.Duration) {
-	t.countObject = timeout
+	return t.CountObject
 }
 
 func (t *S3Timeout) GetGetURLTime() time.Duration {
-	return t.getUrl
-}
-
-func (t *S3Timeout) SetGetURLTime(timeout time.Duration) {
-	t.getUrl = timeout
+	return t.GetUrl
 }
