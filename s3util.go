@@ -18,7 +18,7 @@ import (
 type S3Client struct {
 	Client        *s3.S3
 	UploadDriver  *s3manager.Uploader
-	Config        S3ConfigInterface
+	Config        *S3Config
 	HttpUploadChk HttpChkInterface
 	FileUploadChk FileChkInterface
 }
@@ -57,7 +57,7 @@ func (c *S3Client) GetClient() *s3.S3 {
 	return c.Client
 }
 
-func (c *S3Client) GetConfig() S3ConfigInterface {
+func (c *S3Client) GetConfig() *S3Config {
 	return c.Config
 }
 

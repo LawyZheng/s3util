@@ -2,15 +2,6 @@ package s3util
 
 import "time"
 
-type S3TimeoutInterface interface {
-	GetUploadTime() time.Duration
-	GetHeadObjTime() time.Duration
-	GetCreateBucketTime() time.Duration
-	GetBucketExistTime() time.Duration
-	GetCountObjTime() time.Duration
-	GetGetURLTime() time.Duration
-}
-
 type S3Timeout struct {
 	Upload       time.Duration
 	HeadObject   time.Duration

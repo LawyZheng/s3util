@@ -1,14 +1,5 @@
 package s3util
 
-type S3ConfigInterface interface {
-	GetForcePath() bool
-	GetTimeout() S3TimeoutInterface
-	GetEndpoint() string
-	GetRegion() string
-	GetAccessKey() string
-	GetSecretKey() string
-	GetToken() string
-}
 type S3Config struct {
 	ForcePath bool
 	Endpoint  string
@@ -16,7 +7,7 @@ type S3Config struct {
 	SecretKey string
 	Token     string
 	Region    string
-	Timeout   S3TimeoutInterface
+	Timeout   *S3Timeout
 }
 
 func NewDefaultConfig(endpoint, ak, sk string) *S3Config {
@@ -31,7 +22,7 @@ func NewDefaultConfig(endpoint, ak, sk string) *S3Config {
 	}
 }
 
-func (c *S3Config) GetTimeout() S3TimeoutInterface {
+func (c *S3Config) GetTimeout() *S3Timeout {
 	return c.Timeout
 }
 
