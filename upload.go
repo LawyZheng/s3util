@@ -2,6 +2,7 @@ package s3util
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -30,6 +31,10 @@ func NewUploadRequest(src io.Reader, ctx context.Context, meta map[string]*strin
 	}
 }
 
+func parseChkKey(s string) string {
+	return strings.Title(strings.ToLower(s))
+}
+
 const (
 	etagCheck = "S3utiletagchk"
 )
@@ -39,10 +44,6 @@ type HttpChkFn func(src http.Header, remote *s3.HeadObjectOutput) bool
 type HttpChkInterface interface {
 	GetChkFn() HttpChkFn
 	GetEtag() string
-}
-
-func parseEtagChk(s string) string {
-	return strings.Title(strings.ToLower(s))
 }
 
 func defaultHttpChk() *HttpChk {
@@ -66,7 +67,7 @@ func NewHttpChkWithEtagChk(etagchk string) *HttpChk {
 	if etagchk == "" {
 		panic("etagchk can't be empty")
 	}
-	etagchk = parseEtagChk(etagchk)
+	etagchk = parseChkKey(etagchk)
 
 	return &HttpChk{
 		etag: etagchk,
@@ -80,4 +81,55 @@ func NewHttpChkWithEtagChk(etagchk string) *HttpChk {
 				strings.TrimSpace(aws.StringValue(remote.Metadata[etagchk]))
 		},
 	}
+}
+
+const (
+	md5Check = "S3utilmd5chk"
+)
+
+type FileChkFn func(src string, remote *s3.HeadObjectOutput) bool
+
+type FileChkInterface interface {
+	GetChkFn() FileChkFn
+	GetMd5Key() string
+}
+
+type FileChk struct {
+	md5Key   string
+	md5Value string
+	fn       func(src string, remote *s3.HeadObjectOutput) bool
+}
+
+func (f *FileChk) GetChkFn() FileChkFn {
+	return f.fn
+}
+
+func (f *FileChk) GetMd5Key() string {
+	return f.md5Key
+}
+
+func NewFileChkWithMd5Chk(md5chk string) *FileChk {
+	md5chk = strings.TrimSpace(md5chk)
+	if md5chk == "" {
+		panic("md5chk can't be empty")
+	}
+	md5chk = parseChkKey(md5chk)
+
+	return &FileChk{
+		md5Key: md5chk,
+		fn: func(src string, remote *s3.HeadObjectOutput) bool {
+			srcMd5 := strings.TrimSpace(src)
+			metaChk := strings.TrimSpace(aws.StringValue(remote.Metadata[md5chk]))
+			if srcMd5 == metaChk {
+				return true
+			}
+
+			return aws.StringValue(remote.ETag) ==
+				fmt.Sprintf("\"%s\"", srcMd5)
+		},
+	}
+}
+
+func defaultFileChk() *FileChk {
+	return NewFileChkWithMd5Chk(md5Check)
 }

@@ -20,6 +20,7 @@ type S3Client struct {
 	UploadDriver  *s3manager.Uploader
 	Config        S3ConfigInterface
 	HttpUploadChk HttpChkInterface
+	FileUploadChk FileChkInterface
 }
 
 func (c *S3Client) initClient() {
@@ -69,6 +70,13 @@ func (c *S3Client) GetHttpChk() HttpChkInterface {
 		return defaultHttpChk()
 	}
 	return c.HttpUploadChk
+}
+
+func (c *S3Client) GetFileChk() FileChkInterface {
+	if c.FileUploadChk == nil {
+		return defaultFileChk()
+	}
+	return c.FileUploadChk
 }
 
 func (c *S3Client) CountObjectInFolder(bucket, folder string) (int, error) {
@@ -147,6 +155,37 @@ func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response
 	}
 
 	exist := c.GetHttpChk().GetChkFn()(resp.Header, head)
+	if exist {
+		return &UploadResponse{Output: nil, Skip: true}, nil
+	}
+	return c.UploadSend(bucket, objKey, req)
+}
+
+func (c *S3Client) UploadReader(bucket, objKey string, src io.ReadSeeker) (*UploadResponse, error) {
+	var ctx context.Context
+	var cancel context.CancelFunc
+	if c.GetConfig().GetTimeout().GetUploadTime() != 0 {
+		ctx, cancel = context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetUploadTime())
+		defer cancel()
+	} else {
+		ctx = context.Background()
+	}
+
+	md5Val := GetMd5(src)
+	t := time.Now().Format("2006-01-02 15:04:05")
+	meta := map[string]*string{
+		c.GetFileChk().GetMd5Key(): &md5Val,
+		"modifiedtime":             &t,
+	}
+
+	req := NewUploadRequest(src, ctx, meta)
+
+	head, err := c.GetHeadObject(bucket, objKey)
+	if err != nil {
+		return c.UploadSend(bucket, objKey, req)
+	}
+
+	exist := c.GetFileChk().GetChkFn()(md5Val, head)
 	if exist {
 		return &UploadResponse{Output: nil, Skip: true}, nil
 	}
