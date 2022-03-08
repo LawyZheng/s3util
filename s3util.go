@@ -15,6 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
+type Object = s3.Object
+type CountCallback func(*Object)
+
 type S3Client struct {
 	Client        *s3.S3
 	UploadDriver  *s3manager.Uploader
@@ -79,14 +82,14 @@ func (c *S3Client) GetFileChk() FileChkInterface {
 	return c.FileUploadChk
 }
 
-func (c *S3Client) CountObjectInFolder(bucket, folder string) (int, error) {
+func (c *S3Client) CountInFolder(bucket, folder string, cb CountCallback) (int, error) {
 	if !strings.HasSuffix(folder, "/") {
 		folder = folder + "/"
 	}
-	return c.CountObjectWithPrefix(bucket, folder)
+	return c.CountWithPrefix(bucket, folder, cb)
 }
 
-func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error) {
+func (c *S3Client) CountWithPrefix(bucketName, prefix string, cb CountCallback) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetCountObjTime())
 	defer cancel()
 
@@ -97,6 +100,9 @@ func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error)
 	}, func(p *s3.ListObjectsV2Output, last bool) (shouldContinue bool) {
 		for _, obj := range p.Contents {
 			if *obj.Key != prefix {
+				if cb != nil {
+					cb(obj)
+				}
 				result++
 			}
 		}
@@ -105,7 +111,7 @@ func (c *S3Client) CountObjectWithPrefix(bucketName, prefix string) (int, error)
 	return result, err
 }
 
-func (c *S3Client) GetObjectDownloadURL(bucketName string, key string, expire time.Duration) (string, error) {
+func (c *S3Client) GetDownloadURL(bucketName string, key string, expire time.Duration) (string, error) {
 	params := &s3.GetObjectInput{
 		Bucket: &bucketName,
 		Key:    &key,
@@ -118,7 +124,7 @@ func (c *S3Client) GetObjectDownloadURL(bucketName string, key string, expire ti
 	return url, err
 }
 
-func (c *S3Client) GetHeadObject(bucket, objKey string) (*s3.HeadObjectOutput, error) {
+func (c *S3Client) GetHead(bucket, objKey string) (*s3.HeadObjectOutput, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetHeadObjTime())
 	defer cancel()
 
@@ -149,7 +155,7 @@ func (c *S3Client) UploadHttpResponse(bucket, objKey string, resp *http.Response
 
 	req := NewUploadRequest(resp.Body, ctx, meta)
 
-	head, err := c.GetHeadObject(bucket, objKey)
+	head, err := c.GetHead(bucket, objKey)
 	if err != nil {
 		return c.UploadSend(bucket, objKey, req)
 	}
@@ -180,7 +186,7 @@ func (c *S3Client) UploadReader(bucket, objKey string, src io.ReadSeeker) (*Uplo
 
 	req := NewUploadRequest(src, ctx, meta)
 
-	head, err := c.GetHeadObject(bucket, objKey)
+	head, err := c.GetHead(bucket, objKey)
 	if err != nil {
 		return c.UploadSend(bucket, objKey, req)
 	}
@@ -192,12 +198,12 @@ func (c *S3Client) UploadReader(bucket, objKey string, src io.ReadSeeker) (*Uplo
 	return c.UploadSend(bucket, objKey, req)
 }
 
-func (c *S3Client) CheckObjectExist(bucket, objKey string) (bool, error) {
-	_, err := c.GetHeadObject(bucket, objKey)
+func (c *S3Client) ObjectExist(bucket, objKey string) (bool, error) {
+	_, err := c.GetHead(bucket, objKey)
 	return err == nil, err
 }
 
-func (c *S3Client) PutObjectWithMetadata(bucketName, key string, src io.ReadSeeker, meta map[string]*string) error {
+func (c *S3Client) PutWithMetadata(bucketName, key string, src io.ReadSeeker, meta map[string]*string) error {
 	params := &s3.PutObjectInput{
 		Bucket:   aws.String(bucketName),
 		Key:      aws.String(key),

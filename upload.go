@@ -95,9 +95,8 @@ type FileChkInterface interface {
 }
 
 type FileChk struct {
-	md5Key   string
-	md5Value string
-	fn       func(src string, remote *s3.HeadObjectOutput) bool
+	md5Key string
+	fn     func(src string, remote *s3.HeadObjectOutput) bool
 }
 
 func (f *FileChk) GetChkFn() FileChkFn {
