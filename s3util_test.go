@@ -29,12 +29,12 @@ func TestUploadReader(t *testing.T) {
 	fmt.Printf("out: %v\n", out)
 }
 
-func TestCountObjectWithPrefix(t *testing.T) {
-	assert := assert.New(t)
+// func TestCountObjectWithPrefix(t *testing.T) {
+// 	assert := assert.New(t)
 
-	c := NewS3Client("http://192.168.0.52:9000", "kayisoftadmin", "kayisoftadmin")
-	i, err := c.CountWithPrefix("shimao", "dimage61/20140916/2112962/E6074045", func(obj *Object) { fmt.Printf("obj.Key: %v\n", *obj.Key); fmt.Printf("obj.ETag: %v\n", *obj.ETag) })
-	fmt.Printf("i: %v\n", i)
-	assert.Equal(nil, err, "response error should be nil")
+// 	c := NewS3Client("http://192.168.0.52:9000", "kayisoftadmin", "kayisoftadmin")
+// 	i, err := c.CountWithPrefix("shimao", "dimage61/20140916/2112962/E6074045", func(obj *Object) { fmt.Printf("obj.Key: %v\n", *obj.Key); fmt.Printf("obj.ETag: %v\n", *obj.ETag) })
+// 	fmt.Printf("i: %v\n", i)
+// 	assert.Equal(nil, err, "response error should be nil")
 
-}
+// }
