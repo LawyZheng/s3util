@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -111,12 +112,17 @@ func (c *S3Client) CountWithPrefix(bucketName, prefix string, cb CountCallback) 
 	return result, err
 }
 
-func (c *S3Client) GetDownloadURL(bucketName string, key string, expire time.Duration) (string, error) {
+func (c *S3Client) GetDownloadURL(bucketName string, key string, expire time.Duration, vals ...url.Values) (string, error) {
 	params := &s3.GetObjectInput{
 		Bucket: &bucketName,
 		Key:    &key,
 	}
 	req, _ := c.GetClient().GetObjectRequest(params)
+
+	for _, v := range vals {
+		req.HTTPRequest.URL.RawQuery = req.HTTPRequest.URL.RawQuery + "&" + v.Encode()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), c.GetConfig().GetTimeout().GetGetURLTime())
 	defer cancel()
 	req.SetContext(ctx)
